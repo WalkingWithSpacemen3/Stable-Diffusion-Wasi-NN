@@ -1,3 +1,5 @@
+mod constants;
+
 use std::env;
 use std::fs;
 use wasi_nn;
@@ -33,38 +35,38 @@ fn run_inference() {
     };
     println!("Created wasi-nn execution context with ID: {}", context);
 
-    let mut prompt_ids = vec![49406, 33740, 8853, 539, 550, 18376, 6765, 320, 4558];
-    prompt_ids.extend(vec![49407; 77 - prompt_ids.len()]);
+    let mut token = vec![49406, 33740, 8853, 539, 550, 18376, 6765, 320, 4558];
+    token.extend(vec![49407; 77 - token.len()]);
 
-    let prompt_ids_u8 = i32_to_u8(&prompt_ids);
+    let token_u8 = i32_to_u8(&token);
 
-    println!("Prompt length: {}", prompt_ids_u8.len());
+    println!("Prompt length: {}", token_u8.len());
 
-    let input_tensor1 = wasi_nn::Tensor {
+    let token_tensor = wasi_nn::Tensor {
         dimensions: &[1, 77],
         type_: wasi_nn::TENSOR_TYPE_I32,
-        data: &prompt_ids_u8,
+        data: &token_u8,
     };
     unsafe {
-        wasi_nn::set_input(context, 0, input_tensor1).unwrap();
+        wasi_nn::set_input(context, 0, token_tensor).unwrap();
     }
 
     let pos_ids: Vec<i32> = (0..77).collect();
     let pos_ids_u8 = i32_to_u8(&pos_ids);
-    let input_tensor2 = wasi_nn::Tensor {
+    let pos_ids_tensor = wasi_nn::Tensor {
         dimensions: &[1, 77],
         type_: wasi_nn::TENSOR_TYPE_I32,
         data: &pos_ids_u8,
     };
     unsafe {
-        wasi_nn::set_input(context, 1, input_tensor2).unwrap();
+        wasi_nn::set_input(context, 1, pos_ids_tensor).unwrap();
     }
 
     // Execute the inference.
     unsafe {
         wasi_nn::compute(context).expect("Failed to execute inference");
     }
-    println!("Executed graph inference");
+    println!("Executed context inference");
 
     // Retrieve the output.
     let mut sd_context = vec![0f32; 59136];
@@ -78,8 +80,35 @@ fn run_inference() {
             )
             .expect("Failed to retrieve output");
     }
-
-    for output in sd_context {
+    let unconditional_token = constants::UNCONDITIONAL_TOKEN;
+    let unconditional_token_u8 = i32_to_u8(&unconditional_token);
+    let unconditional_token_tensor = wasi_nn::Tensor {
+        dimensions: &[1, 77],
+        type_: wasi_nn::TENSOR_TYPE_I32,
+        data: &unconditional_token_u8,
+    };
+    unsafe {
+        wasi_nn::set_input(context, 0, unconditional_token_tensor).unwrap();
+    }
+    unsafe {
+        wasi_nn::set_input(context, 1, pos_ids_tensor).unwrap();
+    }
+    unsafe {
+        wasi_nn::compute(context).expect("Failed to execute inference");
+    }
+    println!("Executed unconditional context inference");
+    let mut sd_unconditional_context = vec![0f32; 59136];
+    unsafe {
+        wasi_nn
+            ::get_output(
+                context,
+                0,
+                &mut sd_unconditional_context[..] as *mut [f32] as *mut u8,
+                (sd_unconditional_context.len() * 4).try_into().unwrap()
+            )
+            .expect("Failed to retrieve output");
+    }
+    for output in sd_unconditional_context {
         println!("{}", output);
     }
 }
