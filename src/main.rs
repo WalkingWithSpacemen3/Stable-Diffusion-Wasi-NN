@@ -3,6 +3,8 @@ mod constants;
 use std::env;
 use std::fs;
 use wasi_nn;
+use rand::prelude::*;
+use rand_distr::{ Distribution, StandardNormal };
 
 fn main() {
     run_inference();
@@ -120,4 +122,14 @@ fn i32_to_u8(data: &[i32]) -> Vec<u8> {
         result.extend(&bytes);
     }
     result
+}
+
+fn generate_normal_numbers(n: usize) -> Vec<f32> {
+    let mut rng = thread_rng();
+    let normal = StandardNormal;
+    let mut vec: Vec<f32> = Vec::new();
+    for _ in 0..n {
+        vec.push(normal.sample(&mut rng));
+    }
+    vec
 }

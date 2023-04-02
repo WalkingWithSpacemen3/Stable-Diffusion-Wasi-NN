@@ -6,4 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wasi-nn = { version = "0.3.0" }
+wasi-nn = "0.3.0"
+rand = "0.8.5"
+rand_distr = "0.4.3"
