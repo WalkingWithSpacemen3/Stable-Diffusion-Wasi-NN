@@ -2,3 +2,4 @@
 /.cargo
 *.wasm
 *.tflite
+Cargo.lock
