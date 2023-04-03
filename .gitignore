@@ -3,3 +3,4 @@
 *.wasm
 *.tflite
 Cargo.lock
+/model

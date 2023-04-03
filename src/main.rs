@@ -2,6 +2,7 @@ mod constants;
 
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 use wasi_nn;
 use rand::prelude::*;
 use rand_distr::{ Distribution, StandardNormal };
@@ -13,12 +14,15 @@ fn main() {
 #[no_mangle]
 fn run_inference() {
     let args: Vec<String> = env::args().collect();
-    let model_file_name = &args[1];
+    let model_folder = &args[1];
+    let text_encoder_path = PathBuf::from(format!("{}/text_encoder.tflite", model_folder));
+    let diffusion_model_path = PathBuf::from(format!("{}/diffusion_model.tflite", model_folder));
+    let decoder_path = PathBuf::from(format!("{}/decoder.tflite", model_folder));
     let prompt = &args[2];
 
     println!("Prompt: {}", prompt);
 
-    let model_weights = fs::read(model_file_name).expect("Failed to read model file");
+    let model_weights = fs::read(text_encoder_path).expect("Failed to read model file");
     println!("Read model weights, size in bytes: {}", model_weights.len());
 
     let graph = unsafe {
@@ -176,4 +180,15 @@ fn timestep_embedding(timestep: &usize, dim: usize, max_period: f32) -> Vec<f32>
     let sin_embedding = freqs.map(|f| f * (*timestep as f32)).map(|arg| arg.sin());
     let embedding = cos_embedding.chain(sin_embedding).collect::<Vec<_>>();
     embedding
+}
+
+fn get_model_output(
+    latent: &wasi_nn::Tensor,
+    t: usize,
+    context: wasi_nn::Tensor,
+    unconditional_context: wasi_nn::Tensor,
+    unconditional_guidance_scale: f32,
+    batch_size: usize
+) -> Vec<f32> {
+    Vec::new()
 }
