@@ -113,9 +113,41 @@ fn run_inference() {
     for output in sd_unconditional_context {
         println!("{}", output);
     }
+    let num_steps = 50;
+    let timesteps: Vec<usize> = (0..num_steps).map(|i| (i * 1000) / num_steps + 1).collect();
+    let batch_size = 1;
+    let img_height = 512;
+    let img_width = 512;
+    let n_h = img_height / 8;
+    let n_w = img_width / 8;
+    let alphas: Vec<f32> = timesteps
+        .iter()
+        .map(|&t| constants::ALPHAS_CUMPROD[t])
+        .collect();
+    let alphas_prev: Vec<f32> = vec![1.0]
+        .iter()
+        .chain(alphas.iter().take(timesteps.len() - 1))
+        .cloned()
+        .collect();
+    let latent = generate_normal_numbers(batch_size * n_h * n_w * 4);
+    let latent_u8 = f32_to_u8(&latent);
+    let latent_tensor = wasi_nn::Tensor {
+        dimensions: &[1, 64, 64, 4],
+        type_: wasi_nn::TENSOR_TYPE_F32,
+        data: &latent_u8,
+    };
 }
 
 fn i32_to_u8(data: &[i32]) -> Vec<u8> {
+    let mut result = Vec::new();
+    for &i in data {
+        let bytes = i.to_ne_bytes();
+        result.extend(&bytes);
+    }
+    result
+}
+
+fn f32_to_u8(data: &[f32]) -> Vec<u8> {
     let mut result = Vec::new();
     for &i in data {
         let bytes = i.to_ne_bytes();
@@ -132,4 +164,16 @@ fn generate_normal_numbers(n: usize) -> Vec<f32> {
         vec.push(normal.sample(&mut rng));
     }
     vec
+}
+
+fn timestep_embedding(timestep: &usize, dim: usize, max_period: f32) -> Vec<f32> {
+    let half = dim / 2;
+    let freqs = (0..half).map(|i| { (-((i as f32) * (max_period.ln() / (half as f32)))).exp() });
+    let cos_embedding = freqs
+        .clone()
+        .map(|f| f * (*timestep as f32))
+        .map(|arg| arg.cos());
+    let sin_embedding = freqs.map(|f| f * (*timestep as f32)).map(|arg| arg.sin());
+    let embedding = cos_embedding.chain(sin_embedding).collect::<Vec<_>>();
+    embedding
 }
