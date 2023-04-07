@@ -22,101 +22,144 @@ fn run_inference() {
 
     println!("Prompt: {}", prompt);
 
-    let model_weights = fs::read(text_encoder_path).expect("Failed to read model file");
-    println!("Read model weights, size in bytes: {}", model_weights.len());
-
-    let graph = unsafe {
+    let text_encoder_weights = fs
+        ::read(text_encoder_path)
+        .expect("Failed to read model text encoder");
+    println!("Read text encoder weights, size in bytes: {}", text_encoder_weights.len());
+    let diffusion_model_weights = fs
+        ::read(diffusion_model_path)
+        .expect("Failed to read model diffusion model");
+    println!("Read diffusion model weights, size in bytes: {}", diffusion_model_weights.len());
+    let decoder_weights = fs::read(decoder_path).expect("Failed to read model decoder");
+    println!("Read decoder weights, size in bytes: {}", decoder_weights.len());
+    let text_encoder_graph = unsafe {
         wasi_nn
             ::load(
-                &[&model_weights],
+                &[&text_encoder_weights],
                 wasi_nn::GRAPH_ENCODING_TENSORFLOWLITE,
                 wasi_nn::EXECUTION_TARGET_CPU
             )
             .expect("Failed to load graph")
     };
-    println!("Loaded graph into wasi-nn with ID: {}", graph);
-
-    let context = unsafe {
-        wasi_nn::init_execution_context(graph).expect("Failed to create wasi-nn execution context")
+    println!("Loaded graph into wasi-nn with ID: {}", text_encoder_graph);
+    let diffusion_model_graph = unsafe {
+        wasi_nn
+            ::load(
+                &[&diffusion_model_weights],
+                wasi_nn::GRAPH_ENCODING_TENSORFLOWLITE,
+                wasi_nn::EXECUTION_TARGET_CPU
+            )
+            .expect("Failed to load graph")
     };
-    println!("Created wasi-nn execution context with ID: {}", context);
+    println!("Loaded graph into wasi-nn with ID: {}", diffusion_model_graph);
+    let decoder_graph = unsafe {
+        wasi_nn
+            ::load(
+                &[&decoder_weights],
+                wasi_nn::GRAPH_ENCODING_TENSORFLOWLITE,
+                wasi_nn::EXECUTION_TARGET_CPU
+            )
+            .expect("Failed to load graph")
+    };
+    println!("Loaded graph into wasi-nn with ID: {}", decoder_graph);
+
+    let text_encoder = unsafe {
+        wasi_nn
+            ::init_execution_context(text_encoder_graph)
+            .expect("Failed to create wasi-nn execution context")
+    };
+    println!("Created text encoder execution context with ID: {}", text_encoder);
+
+    let decoder = unsafe {
+        wasi_nn
+            ::init_execution_context(decoder_graph)
+            .expect("Failed to create wasi-nn execution context")
+    };
+    println!("Created decoder execution context with ID: {}", decoder);
+
+    let diffusion_model = unsafe {
+        wasi_nn
+            ::init_execution_context(diffusion_model_graph)
+            .expect("Failed to create wasi-nn execution context")
+    };
+    println!("Created diffusion model execution context with ID: {}", diffusion_model);
 
     let mut token = vec![49406, 33740, 8853, 539, 550, 18376, 6765, 320, 4558];
     token.extend(vec![49407; 77 - token.len()]);
-
-    let token_u8 = i32_to_u8(&token);
-
-    println!("Prompt length: {}", token_u8.len());
-
     let token_tensor = wasi_nn::Tensor {
         dimensions: &[1, 77],
         type_: wasi_nn::TENSOR_TYPE_I32,
-        data: &token_u8,
+        data: &i32_to_u8(&token),
     };
     unsafe {
-        wasi_nn::set_input(context, 0, token_tensor).unwrap();
+        wasi_nn::set_input(text_encoder, 0, token_tensor).unwrap();
     }
 
     let pos_ids: Vec<i32> = (0..77).collect();
-    let pos_ids_u8 = i32_to_u8(&pos_ids);
     let pos_ids_tensor = wasi_nn::Tensor {
         dimensions: &[1, 77],
         type_: wasi_nn::TENSOR_TYPE_I32,
-        data: &pos_ids_u8,
+        data: &i32_to_u8(&pos_ids),
     };
     unsafe {
-        wasi_nn::set_input(context, 1, pos_ids_tensor).unwrap();
+        wasi_nn::set_input(text_encoder, 1, pos_ids_tensor).unwrap();
     }
 
     // Execute the inference.
     unsafe {
-        wasi_nn::compute(context).expect("Failed to execute inference");
+        wasi_nn::compute(text_encoder).expect("Failed to execute inference");
     }
-    println!("Executed context inference");
+    println!("Executed text encoder inference");
 
     // Retrieve the output.
     let mut sd_context = vec![0f32; 59136];
     unsafe {
         wasi_nn
             ::get_output(
-                context,
+                text_encoder,
                 0,
                 &mut sd_context[..] as *mut [f32] as *mut u8,
                 (sd_context.len() * 4).try_into().unwrap()
             )
             .expect("Failed to retrieve output");
     }
+    let sd_context_tensor = wasi_nn::Tensor {
+        dimensions: &[1, 77, 768],
+        type_: wasi_nn::TENSOR_TYPE_F32,
+        data: &f32_to_u8(&sd_context),
+    };
     let unconditional_token = constants::UNCONDITIONAL_TOKEN;
-    let unconditional_token_u8 = i32_to_u8(&unconditional_token);
     let unconditional_token_tensor = wasi_nn::Tensor {
         dimensions: &[1, 77],
         type_: wasi_nn::TENSOR_TYPE_I32,
-        data: &unconditional_token_u8,
+        data: &i32_to_u8(&unconditional_token),
     };
     unsafe {
-        wasi_nn::set_input(context, 0, unconditional_token_tensor).unwrap();
+        wasi_nn::set_input(text_encoder, 0, unconditional_token_tensor).unwrap();
     }
     unsafe {
-        wasi_nn::set_input(context, 1, pos_ids_tensor).unwrap();
+        wasi_nn::set_input(text_encoder, 1, pos_ids_tensor).unwrap();
     }
     unsafe {
-        wasi_nn::compute(context).expect("Failed to execute inference");
+        wasi_nn::compute(text_encoder).expect("Failed to execute inference");
     }
-    println!("Executed unconditional context inference");
+    println!("Executed text encoder inference");
     let mut sd_unconditional_context = vec![0f32; 59136];
     unsafe {
         wasi_nn
             ::get_output(
-                context,
+                text_encoder,
                 0,
                 &mut sd_unconditional_context[..] as *mut [f32] as *mut u8,
                 (sd_unconditional_context.len() * 4).try_into().unwrap()
             )
             .expect("Failed to retrieve output");
     }
-    for output in sd_unconditional_context {
-        println!("{}", output);
-    }
+    let sd_unconditional_context_tensor = wasi_nn::Tensor {
+        dimensions: &[1, 77, 768],
+        type_: wasi_nn::TENSOR_TYPE_F32,
+        data: &f32_to_u8(&sd_unconditional_context),
+    };
     let num_steps = 50;
     let timesteps: Vec<usize> = (0..num_steps).map(|i| (i * 1000) / num_steps + 1).collect();
     let batch_size = 1;
@@ -134,12 +177,39 @@ fn run_inference() {
         .cloned()
         .collect();
     let latent = generate_normal_numbers(batch_size * n_h * n_w * 4);
-    let latent_u8 = f32_to_u8(&latent);
     let latent_tensor = wasi_nn::Tensor {
         dimensions: &[1, 64, 64, 4],
         type_: wasi_nn::TENSOR_TYPE_F32,
-        data: &latent_u8,
+        data: &f32_to_u8(&latent),
     };
+    let t_emb = timestep_embedding(&timesteps[0], 320, 10000.0);
+    // t_emb = t_emb
+    //     .iter()
+    //     .cloned()
+    //     .flat_map(|x| std::iter::repeat(x).take(batch_size))
+    //     .collect();
+    //
+    let t_emb_tensor = wasi_nn::Tensor {
+        dimensions: &[1, 320],
+        type_: wasi_nn::TENSOR_TYPE_F32,
+        data: &f32_to_u8(&t_emb),
+    };
+    println!("{}", t_emb.len());
+    unsafe {
+        wasi_nn::set_input(diffusion_model, 0, t_emb_tensor).unwrap();
+    }
+    // println!(
+    //     "{:?}",
+    //     get_model_output(
+    //         &latent_tensor,
+    //         &timesteps[0],
+    //         &diffusion_model,
+    //         &sd_context_tensor,
+    //         &sd_unconditional_context_tensor,
+    //         7.5,
+    //         1
+    //     )
+    // );
 }
 
 fn i32_to_u8(data: &[i32]) -> Vec<u8> {
@@ -178,17 +248,53 @@ fn timestep_embedding(timestep: &usize, dim: usize, max_period: f32) -> Vec<f32>
         .map(|f| f * (*timestep as f32))
         .map(|arg| arg.cos());
     let sin_embedding = freqs.map(|f| f * (*timestep as f32)).map(|arg| arg.sin());
-    let embedding = cos_embedding.chain(sin_embedding).collect::<Vec<_>>();
+    let mut embedding = cos_embedding.chain(sin_embedding).collect::<Vec<_>>();
     embedding
 }
 
 fn get_model_output(
     latent: &wasi_nn::Tensor,
-    t: usize,
-    context: wasi_nn::Tensor,
-    unconditional_context: wasi_nn::Tensor,
+    t: &usize,
+    diffusion_model: &wasi_nn::GraphExecutionContext,
+    context: &wasi_nn::Tensor,
+    unconditional_context: &wasi_nn::Tensor,
     unconditional_guidance_scale: f32,
     batch_size: usize
 ) -> Vec<f32> {
-    Vec::new()
+    let mut t_emb = timestep_embedding(t, 320, 10000.0);
+    t_emb = t_emb
+        .iter()
+        .cloned()
+        .flat_map(|x| std::iter::repeat(x).take(batch_size))
+        .collect();
+    println!("{}", t_emb.len());
+    let t_emb_tensor = wasi_nn::Tensor {
+        dimensions: &[1, 320],
+        type_: wasi_nn::TENSOR_TYPE_F32,
+        data: &f32_to_u8(&t_emb),
+    };
+    unsafe {
+        wasi_nn::set_input(*diffusion_model, 0, t_emb_tensor).unwrap();
+    }
+    unsafe {
+        wasi_nn::set_input(*diffusion_model, 1, *unconditional_context).unwrap();
+    }
+    unsafe {
+        wasi_nn::set_input(*diffusion_model, 2, *latent).unwrap();
+    }
+    unsafe {
+        wasi_nn::compute(*diffusion_model).expect("Failed to execute inference");
+    }
+    let mut res: Vec<f32> = Vec::new();
+    unsafe {
+        wasi_nn
+            ::get_output(
+                *diffusion_model,
+                0,
+                &mut res[..] as *mut [f32] as *mut u8,
+                (res.len() * 4).try_into().unwrap()
+            )
+            .expect("Failed to retrieve output");
+    }
+    res
 }
