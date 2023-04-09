@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use wasi_nn;
 use rand::prelude::*;
 use rand_distr::{ Distribution, StandardNormal };
+use std::f32;
 
 fn main() {
     run_inference();
@@ -177,7 +178,7 @@ fn run_inference() {
         .chain(alphas.iter().take(timesteps.len() - 1))
         .cloned()
         .collect();
-    let latent = generate_normal_numbers(batch_size * n_h * n_w * 4);
+    let mut latent = generate_normal_numbers(batch_size * n_h * n_w * 4);
     let latent_tensor = wasi_nn::Tensor {
         dimensions: &[1, 64, 64, 4],
         type_: wasi_nn::TENSOR_TYPE_F32,
@@ -210,7 +211,7 @@ fn run_inference() {
             wasi_nn::compute(diffusion_model).expect("Failed to execute inference");
         }
         println!("Executed diffusion model inference");
-        let mut unconditional_latent = vec![0f32; 4];
+        let mut unconditional_latent = vec![0f32; 16384];
         unsafe {
             wasi_nn
                 ::get_output(
@@ -261,6 +262,17 @@ fn run_inference() {
             .collect();
         let a_t = alphas[timesteps.len() - index - 1];
         let a_prev = alphas_prev[timesteps.len() - index - 1];
+        let mut pred_x0 = Vec::with_capacity(latent.len());
+        let mut dir_xt = Vec::with_capacity(latent.len());
+        let mut x_prev = Vec::with_capacity(latent.len());
+        let sqrt_one_minus_at = f32::sqrt(1.0 - a_t);
+
+        for i in 0..latent.len() {
+            pred_x0.push((latent[i] - sqrt_one_minus_at * result[i]) / f32::sqrt(a_t));
+            dir_xt.push(f32::sqrt(1.0 - a_prev) * result[i]);
+            x_prev.push(f32::sqrt(a_prev) * pred_x0[i] + dir_xt[i]);
+        }
+        latent.clone_from_slice(&x_prev);
     }
     // let t_emb = timestep_embedding(&timesteps[0], 320, 10000.0);
     // // t_emb = t_emb
