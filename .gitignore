@@ -4,3 +4,4 @@
 *.tflite
 Cargo.lock
 /model
+/tmp
