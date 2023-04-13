@@ -19,9 +19,9 @@ fn run_inference() {
     let text_encoder_path = PathBuf::from(format!("{}/text_encoder.tflite", model_folder));
     let diffusion_model_path = PathBuf::from(format!("{}/diffusion_model.tflite", model_folder));
     let decoder_path = PathBuf::from(format!("{}/decoder.tflite", model_folder));
-    let prompt = &args[2];
+    // let prompt = &args[2];
 
-    println!("Prompt: {}", prompt);
+    // println!("Prompt: {}", prompt);
 
     let text_encoder_weights = fs
         ::read(text_encoder_path)
@@ -71,6 +71,7 @@ fn run_inference() {
     };
     println!("Created text encoder execution context with ID: {}", text_encoder);
 
+    // select_tf_ops error
     // let decoder = unsafe {
     //     wasi_nn
     //         ::init_execution_context(decoder_graph)
@@ -84,7 +85,7 @@ fn run_inference() {
             .expect("Failed to create wasi-nn execution context")
     };
     println!("Created diffusion model execution context with ID: {}", diffusion_model);
-
+    // example token for promt "horse"
     let mut token = vec![49406, 33740, 8853, 539, 550, 18376, 6765, 320, 4558];
     token.extend(vec![49407; 77 - token.len()]);
     let token_tensor = wasi_nn::Tensor {
@@ -197,7 +198,7 @@ fn run_inference() {
             type_: wasi_nn::TENSOR_TYPE_F32,
             data: &f32_to_u8(&t_emb),
         };
-        println!("{}", t_emb.len());
+        println!("diffusion model inference start point");
         unsafe {
             wasi_nn::set_input(diffusion_model, 0, t_emb_tensor).unwrap();
         }
@@ -274,56 +275,6 @@ fn run_inference() {
         }
         latent.clone_from_slice(&x_prev);
     }
-    // let t_emb = timestep_embedding(&timesteps[0], 320, 10000.0);
-    // // t_emb = t_emb
-    // //     .iter()
-    // //     .cloned()
-    // //     .flat_map(|x| std::iter::repeat(x).take(batch_size))
-    // //     .collect();
-    // //
-    // let t_emb_tensor = wasi_nn::Tensor {
-    //     dimensions: &[1, 320],
-    //     type_: wasi_nn::TENSOR_TYPE_F32,
-    //     data: &f32_to_u8(&t_emb),
-    // };
-    // println!("{}", t_emb.len());
-    // unsafe {
-    //     wasi_nn::set_input(diffusion_model, 0, t_emb_tensor).unwrap();
-    // }
-    // unsafe {
-    //     wasi_nn::set_input(diffusion_model, 1, sd_unconditional_context_tensor).unwrap();
-    // }
-    // unsafe {
-    //     wasi_nn::set_input(diffusion_model, 2, latent_tensor).unwrap();
-    // }
-    // unsafe {
-    //     wasi_nn::compute(diffusion_model).expect("Failed to execute inference");
-    // }
-    // println!("Executed diffusion model inference");
-    // let mut diffusion_output = vec![0f32; 4];
-    // unsafe {
-    //     wasi_nn
-    //         ::get_output(
-    //             diffusion_model,
-    //             0,
-    //             &mut diffusion_output[..] as *mut [f32] as *mut u8,
-    //             (diffusion_output.len() * 4).try_into().unwrap()
-    //         )
-    //         .expect("Failed to retrieve output");
-    // }
-    // println!("{:?}", diffusion_output);
-    // println!(
-    //     "{:?}",
-    //     get_model_output(
-    //         &latent_tensor,
-    //         &timesteps[0],
-    //         &diffusion_model,
-    //         &sd_context_tensor,
-    //         &sd_unconditional_context_tensor,
-    //         7.5,
-    //         1
-    //     )
-    // );
 }
 
 fn i32_to_u8(data: &[i32]) -> Vec<u8> {
@@ -365,50 +316,3 @@ fn timestep_embedding(timestep: &usize, dim: usize, max_period: f32) -> Vec<f32>
     let embedding = cos_embedding.chain(sin_embedding).collect::<Vec<_>>();
     embedding
 }
-
-// fn get_model_output(
-//     latent: &wasi_nn::Tensor,
-//     t: &usize,
-//     diffusion_model: &wasi_nn::GraphExecutionContext,
-//     context: &wasi_nn::Tensor,
-//     unconditional_context: &wasi_nn::Tensor,
-//     unconditional_guidance_scale: f32,
-//     batch_size: usize
-// ) -> Vec<f32> {
-//     let mut t_emb = timestep_embedding(t, 320, 10000.0);
-//     t_emb = t_emb
-//         .iter()
-//         .cloned()
-//         .flat_map(|x| std::iter::repeat(x).take(batch_size))
-//         .collect();
-//     println!("{}", t_emb.len());
-//     let t_emb_tensor = wasi_nn::Tensor {
-//         dimensions: &[1, 320],
-//         type_: wasi_nn::TENSOR_TYPE_F32,
-//         data: &f32_to_u8(&t_emb),
-//     };
-//     unsafe {
-//         wasi_nn::set_input(*diffusion_model, 0, t_emb_tensor).unwrap();
-//     }
-//     unsafe {
-//         wasi_nn::set_input(*diffusion_model, 1, *unconditional_context).unwrap();
-//     }
-//     unsafe {
-//         wasi_nn::set_input(*diffusion_model, 2, *latent).unwrap();
-//     }
-//     unsafe {
-//         wasi_nn::compute(*diffusion_model).expect("Failed to execute inference");
-//     }
-//     let mut res: Vec<f32> = Vec::new();
-//     unsafe {
-//         wasi_nn
-//             ::get_output(
-//                 *diffusion_model,
-//                 0,
-//                 &mut res[..] as *mut [f32] as *mut u8,
-//                 (res.len() * 4).try_into().unwrap()
-//             )
-//             .expect("Failed to retrieve output");
-//     }
-//     res
-// }
